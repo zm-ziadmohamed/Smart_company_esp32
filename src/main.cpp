@@ -41,6 +41,8 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 #include <Keypad.h>
 #include <ESP32Servo.h>
 #include <HTTPClient.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 // Wi-Fi and MQTT credentials
 const char *ssid = "tedata";
@@ -103,11 +105,12 @@ char keys[ROW_NUM][COLUMN_NUM] = {
     {'7', '8', '9', 'C'},
     {'*', '0', '#', 'D'}};
 
-byte rowPins[ROW_NUM] = {21, 19, 18, 5};
-byte columnPins[COLUMN_NUM] = {22, 4, 15, 2};
+byte rowPins[ROW_NUM] = {23, 19, 18, 5};
+byte columnPins[COLUMN_NUM] = {16, 4, 15, 2};
 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, columnPins, ROW_NUM, COLUMN_NUM);
 Servo doorServo;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 const int buzzerPin = 12;
 const int irSensorPin = 33;
@@ -153,6 +156,21 @@ String validPassword = "";
 bool doorOpened = false;
 unsigned long doorOpenedTime = 0;
 
+// LCD display states
+enum DisplayState
+{
+  DISPLAY_ENTER_SECRET,
+  DISPLAY_PASSWORD_ENTERING,
+  DISPLAY_CORRECT,
+  DISPLAY_INCORRECT,
+  DISPLAY_WAITING,
+  DISPLAY_NOT_ATTENDED
+};
+
+DisplayState currentDisplayState = DISPLAY_ENTER_SECRET;
+unsigned long displayChangeTime = 0;
+const unsigned long DISPLAY_DURATION = 1000; // Duration for displaying messages
+
 // Function prototypes
 void setupWiFi();
 void setupPins();
@@ -176,6 +194,7 @@ void monitorPassage();
 void checkForAttendance();
 void handleKeypad();
 void detectGas();
+void updateLCD();
 
 // Create Wi-Fi and MQTT client objects
 WiFiClientSecure espClient;
@@ -214,6 +233,8 @@ void loop()
   handleKeypad();
   monitorPassage();
   checkForAttendance();
+  updateLCD();
+
   delay(100);
 }
 
@@ -257,6 +278,8 @@ void setupPins()
   setLEDState(ledChannelGreen, 0);
   setLEDState(ledChannelWhite, 0);
   setLEDState(ledChannelYellow, 0);
+  lcd.init();      // Initialize the LCD
+  lcd.backlight(); // Turn on the backlight
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -374,7 +397,8 @@ void handleKeypad()
 
   if (key)
   {
-    Serial.print(key);
+    currentDisplayState = DISPLAY_PASSWORD_ENTERING;
+    displayChangeTime = millis(); // Update time when state changed
     inputPassword += key;
 
     if (key == '#')
@@ -385,7 +409,6 @@ void handleKeypad()
     }
   }
 }
-
 void checkPassword()
 {
   if (WiFi.status() == WL_CONNECTED)
@@ -424,13 +447,18 @@ void handleApiResponse(String response)
   {
     Serial.println("Password correct");
     validPassword = inputPassword.substring(0, inputPassword.length() - 1); // Store valid password
+    currentDisplayState = DISPLAY_WAITING;
+
     openDoor();
   }
   else
   {
     Serial.println("Incorrect password");
+    currentDisplayState = DISPLAY_INCORRECT;
+
     soundBuzzer(1000);
   }
+  displayChangeTime = millis(); // Update time when state changed
 }
 
 void openDoor()
@@ -486,6 +514,8 @@ void monitorPassage()
     closeDoor();        // Close the door
     doorOpened = false; // Reset the flag
     doorOpenedTime = 0; // Reset the timer
+    currentDisplayState = DISPLAY_ENTER_SECRET;
+    displayChangeTime = millis(); // Reset display change time
   }
 }
 
@@ -497,8 +527,10 @@ void checkForAttendance()
     soundBuzzer(1000);
     closeDoor();
     Serial.println("Not attended");
-    doorOpened = false; // Reset the flag
-    doorOpenedTime = 0; // Reset the timer
+    currentDisplayState = DISPLAY_NOT_ATTENDED;
+    displayChangeTime = millis(); // Update time when state changed
+    doorOpened = false;           // Reset the flag
+    doorOpenedTime = 0;           // Reset the timer
   }
 }
 
@@ -520,5 +552,62 @@ void detectGas()
   else
   {
     digitalWrite(buzzerPin, LOW); // Turn buzzer off
+  }
+}
+
+void updateLCD()
+{
+  unsigned long currentTime = millis();
+  switch (currentDisplayState)
+  {
+  case DISPLAY_ENTER_SECRET:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Enter Secret");
+    lcd.setCursor(0, 1);
+    lcd.print("                "); // Clear second row
+    break;
+  case DISPLAY_PASSWORD_ENTERING:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Enter Secret");
+    lcd.setCursor(0, 1);
+    lcd.print(inputPassword); // Display the current password input
+    break;
+  case DISPLAY_CORRECT:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Password Correct");
+    lcd.setCursor(0, 1);
+    lcd.print("Waiting...");
+    break;
+  case DISPLAY_INCORRECT:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Incorrect");
+    lcd.setCursor(0, 1);
+    lcd.print("Try Again");
+    break;
+  case DISPLAY_WAITING:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Waiting...");
+    lcd.setCursor(0, 1);
+    lcd.print("For Passage");
+    break;
+  case DISPLAY_NOT_ATTENDED:
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Not Attended");
+    lcd.setCursor(0, 1);
+    lcd.print("Enter Secret");
+    break;
+  }
+
+  // Clear the screen after display duration
+  if (currentTime - displayChangeTime >= DISPLAY_DURATION && currentDisplayState != DISPLAY_WAITING)
+  {
+    currentDisplayState = DISPLAY_ENTER_SECRET;
+    displayChangeTime = millis();
   }
 }
