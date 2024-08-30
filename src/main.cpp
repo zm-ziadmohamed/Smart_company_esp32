@@ -115,7 +115,17 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 const int buzzerPin = 12;
 const int irSensorPin = 33;
 const int MQ2_PIN = 34;
+/*
+23 yellow
+19 purppl
+18 -orng
+5- bla
+16- grey
+4 w
+15 gren
+re 2
 
+*/
 // Predefined brightness levels
 const int LOW_BRIGHTNESS = 20;    // ~33% brightness
 const int MEDIUM_BRIGHTNESS = 80; // ~66% brightness
@@ -169,7 +179,7 @@ enum DisplayState
 
 DisplayState currentDisplayState = DISPLAY_ENTER_SECRET;
 unsigned long displayChangeTime = 0;
-const unsigned long DISPLAY_DURATION = 1000; // Duration for displaying messages
+const unsigned long DISPLAY_DURATION = 5000; // Duration for displaying messages
 
 // Function prototypes
 void setupWiFi();
@@ -278,6 +288,7 @@ void setupPins()
   setLEDState(ledChannelGreen, 0);
   setLEDState(ledChannelWhite, 0);
   setLEDState(ledChannelYellow, 0);
+  digitalWrite(buzzerPin, LOW);
   lcd.init();      // Initialize the LCD
   lcd.backlight(); // Turn on the backlight
 }
@@ -346,7 +357,7 @@ void setLEDState(int ledChannel, int brightness)
 void handleAutoMode()
 {
   int ldrValue = analogRead(ldrPin);
-  int brightness = map(ldrValue, 0, 1600, 255, 0);
+  int brightness = map(ldrValue, 0, 1580, 255, 0);
 
   if (redMode == AUTO_MODE)
     setLEDState(ledChannelRed, brightness);
